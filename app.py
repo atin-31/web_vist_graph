@@ -1,7 +1,9 @@
 import streamlit as st
+import gdown
 import os
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torchvision.models as models
 import torchvision.transforms as transforms
 from sklearn.neighbors import kneighbors_graph
@@ -10,36 +12,47 @@ import cv2
 import joblib
 from PIL import Image
 import matplotlib.pyplot as plt
-import gdown  # Đã thêm thư viện tải file từ Google Drive
-
-# Import cấu trúc model từ thư viện nội bộ
-from vist_graph.models import ViST_GCN 
 
 # ==========================================
-# CẤU HÌNH GIAO DIỆN & STYLE CSS
+# KHU VỰC 1: ĐỊNH NGHĨA KIẾN TRÚC MÔ HÌNH (CHUẨN GCN)
+# Đưa thẳng vào app.py để chống lỗi thiếu module trên Cloud
+# ==========================================
+class ViST_GCN(nn.Module):
+    def __init__(self, in_feats, hidden_feats, out_feats):
+        super().__init__()
+        self.linear1 = nn.Linear(in_feats, hidden_feats)
+        self.linear2 = nn.Linear(hidden_feats, out_feats)
+        self.dropout = nn.Dropout(0.3)
+
+    def forward(self, x, edge_index):
+        num_nodes = x.size(0)
+        val = torch.ones(edge_index.size(1), device=x.device)
+        adj = torch.sparse_coo_tensor(edge_index, val, (num_nodes, num_nodes))
+        deg = torch.sparse.sum(adj, dim=1).to_dense()
+        deg_inv = 1.0 / deg
+        deg_inv[deg_inv == float('inf')] = 0
+        x = self.dropout(x)
+        x = self.linear1(x)
+        x = torch.sparse.mm(adj, x) * deg_inv.unsqueeze(1)
+        x = F.elu(x)
+        x = self.dropout(x)
+        x = self.linear2(x)
+        x = torch.sparse.mm(adj, x) * deg_inv.unsqueeze(1)
+        return x
+
+# ==========================================
+# KHU VỰC 2: CẤU HÌNH GIAO DIỆN & TẢI TÀI SẢN
 # ==========================================
 st.set_page_config(page_title="ViST-Graph AI Portal", page_icon="🧬", layout="wide")
 
+# CSS tương thích Dark/Light Mode và Menu chuyên nghiệp
 st.markdown("""
     <style>
-    .header-container { 
-        background: linear-gradient(90deg, #1E3A8A 0%, #3B82F6 100%); 
-        padding: 2rem; 
-        border-radius: 15px; 
-        color: white; 
-        margin-bottom: 2rem; 
-    }
+    .stMetric { background-color: var(--secondary-background-color); padding: 15px; border-radius: 10px; border: 1px solid rgba(128, 128, 128, 0.2); }
+    .header-container { background: linear-gradient(90deg, #1E3A8A 0%, #3B82F6 100%); padding: 2rem; border-radius: 15px; color: white; margin-bottom: 2rem; }
     .header-title { font-size: 2.5rem; font-weight: 800; margin-bottom: 0.5rem; }
     .header-subtitle { font-size: 1.1rem; opacity: 0.9; }
-    
-    /* Box hướng dẫn */
-    .guide-box {
-        background-color: var(--secondary-background-color);
-        padding: 20px;
-        border-radius: 10px;
-        border-left: 5px solid #3B82F6;
-        margin-bottom: 20px;
-    }
+    .guide-box { background-color: var(--secondary-background-color); padding: 20px; border-radius: 10px; border-left: 5px solid #3B82F6; margin-bottom: 20px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -50,56 +63,46 @@ st.markdown("""
     </div>
 """, unsafe_allow_html=True)
 
-# ==========================================
-# LOGIC HỆ THỐNG (ONLINE CLOUD MODE)
-# ==========================================
 @st.cache_resource(show_spinner=False)
 def load_all_assets():
-    # 1. ĐẢM BẢO CÁC THƯ MỤC TỒN TẠI TRÊN MÁY CHỦ
-    os.makedirs('models', exist_ok=True)
-    os.makedirs('data', exist_ok=True)
-
-    # 2. KHAI BÁO ID GOOGLE DRIVE CỦA BẠN TẠI ĐÂY
-    # Hướng dẫn: Lấy ID từ link Google Drive (VD: link có dạng .../d/1a2b3c4d5e/view thì ID là 1a2b3c4d5e)
-    MODEL_DRIVE_ID = '1bSRncH0wWJki2b8ghBWIWpO0TilG_JGY'
-    PCA_DRIVE_ID = '1wMMF7PxxVG5RkvfYhgGrbavKcC9mtNp8/'
-    MAPPING_DRIVE_ID = '1h0UgTQqA71UCRlvsHrAyVqNeLS1UEdAu'
-
-    model_path = 'models/best_vist_model.pth'
-    pca_path = 'models/pca_model.pkl'
-    mapping_path = 'data/gene_names_mapping.pkl'
-
-    # Hàm tải file thông minh (Chỉ tải nếu file chưa tồn tại)
-    def download_from_gdrive(file_id, output_path):
-        if not os.path.exists(output_path) and file_id != 'ĐIỀN_ID_FILE_...':
-            url = f'https://drive.google.com/uc?id={file_id}'
-            print(f"Đang tải {output_path} từ Google Drive...")
-            gdown.download(url, output_path, quiet=False)
-
-    # Thực thi tải file
-    download_from_gdrive(MODEL_DRIVE_ID, model_path)
-    download_from_gdrive(PCA_DRIVE_ID, pca_path)
-    download_from_gdrive(MAPPING_DRIVE_ID, mapping_path)
-
-    # 3. KHỞI TẠO MÔ HÌNH NHƯ BÌNH THƯỜNG
+    # 1. ResNet50
     resnet = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V1)
     resnet = nn.Sequential(*list(resnet.children())[:-1])
     resnet.eval()
 
+    # --- ĐIỀN ID GOOGLE DRIVE CỦA BẠN VÀO 3 BIẾN NÀY ---
+    model_id = '1bSRncH0wWJki2b8ghBWIWpO0TilG_JGY'
+    pca_id   = '1wMMF7PxxVG5RkvfYhgGrbavKcC9mtNp8' 
+    map_id   = '1h0UgTQqA71UCRlvsHrAyVqNeLS1UEdAu'
+    # ---------------------------------------------------
+
+    # 2. Tải GCN Model
+    if not os.path.exists('best_vist_model.pth'):
+        gdown.download(f'https://drive.google.com/uc?id={model_id}', 'best_vist_model.pth', quiet=False)
     gcn = ViST_GCN(in_feats=2048, hidden_feats=256, out_feats=50)
-    if os.path.exists(model_path):
-        gcn.load_state_dict(torch.load(model_path, map_location='cpu', weights_only=False))
+    if os.path.exists('best_vist_model.pth'):
+        gcn.load_state_dict(torch.load('best_vist_model.pth', map_location='cpu'))
     gcn.eval()
 
-    pca_obj = joblib.load(pca_path) if os.path.exists(pca_path) else None
-    gene_map = joblib.load(mapping_path) if os.path.exists(mapping_path) else None
+    # 3. Tải PCA Key
+    if not os.path.exists('gene_pca_model.pkl'):
+        gdown.download(f'https://drive.google.com/uc?id={pca_id}', 'gene_pca_model.pkl', quiet=False)
+    pca_obj = joblib.load('gene_pca_model.pkl') if os.path.exists('gene_pca_model.pkl') else None
+
+    # 4. Tải Gene Name Mapping
+    if not os.path.exists('gene_names_mapping.pkl'):
+        gdown.download(f'https://drive.google.com/uc?id={map_id}', 'gene_names_mapping.pkl', quiet=False)
+    gene_map = joblib.load('gene_names_mapping.pkl') if os.path.exists('gene_names_mapping.pkl') else None
     
     return resnet, gcn, pca_obj, gene_map
 
-# Gọi hàm load với hiệu ứng tải cho người dùng biết
-with st.spinner('🔄 Máy chủ đang chuẩn bị hệ thống AI (có thể mất ít phút ở lần chạy đầu tiên để tải dữ liệu)...'):
+# Load dữ liệu (Có spinner báo cho người dùng biết trên web)
+with st.spinner('🔄 Máy chủ đang chuẩn bị hệ thống AI (có thể mất ít phút ở lần chạy đầu tiên)...'):
     resnet, gcn_model, pca_model, gene_mapping = load_all_assets()
 
+# ==========================================
+# KHU VỰC 3: HÀM XỬ LÝ ĐỒ THỊ
+# ==========================================
 def run_pipeline(image_pil, grid_size=6):
     patch_size = 224
     img_square = image_pil.resize((patch_size * grid_size, patch_size * grid_size))
@@ -121,8 +124,13 @@ def run_pipeline(image_pil, grid_size=6):
     return x, edge_index
 
 # ==========================================
-# MENU ĐIỀU HƯỚNG
+# KHU VỰC 4: MENU ĐIỀU HƯỚNG & GIAO DIỆN
 # ==========================================
+if "current_file_bytes" not in st.session_state:
+    st.session_state.current_file_bytes = None
+if "output" not in st.session_state:
+    st.session_state.output = None
+
 with st.sidebar:
     st.image("https://img.icons8.com/fluency/96/dna.png", width=80)
     st.markdown("### 📌 Menu Điều hướng")
@@ -132,18 +140,22 @@ with st.sidebar:
     st.markdown("### 📥 Dữ liệu đầu vào")
     uploaded_file = st.file_uploader("Tải lên ảnh bệnh phẩm (H&E)", type=["jpg", "png"])
 
-# ==========================================
-# TRANG 1: PHÂN TÍCH DỮ LIỆU
-# ==========================================
+# ----------------- TRANG 1: PHÂN TÍCH -----------------
 if menu_selection == "🔬 Phân tích dữ liệu":
-    if uploaded_file:
-        if "current_file" not in st.session_state or st.session_state.current_file != uploaded_file.name:
-            image = Image.open(uploaded_file).convert('RGB')
+    if uploaded_file is None:
+        st.info("👈 Vui lòng tải lên ảnh mô bệnh học (H&E) ở thanh bên trái để bắt đầu quá trình phân tích.")
+        st.markdown("💡 *Gợi ý: Nếu bạn chưa quen với hệ thống, hãy chuyển sang tab **Hướng dẫn & Đọc hiểu** trên thanh menu.*")
+    else:
+        image = Image.open(uploaded_file).convert('RGB')
+        file_bytes = uploaded_file.getvalue()
+        
+        # Xử lý khi có ảnh mới
+        if st.session_state.current_file_bytes != file_bytes:
             with st.status("🧠 AI đang thực hiện giải mã không gian...", expanded=False) as status:
                 x, edge_index = run_pipeline(image)
                 with torch.no_grad():
                     st.session_state.output = gcn_model(x, edge_index)
-                st.session_state.current_file = uploaded_file.name
+                st.session_state.current_file_bytes = file_bytes 
                 status.update(label="✅ Giải mã hoàn tất!", state="complete")
 
         target_mg = st.select_slider("🎯 Kéo để chọn Siêu gene (Metagene) cần xem chi tiết:", options=range(50), value=0)
@@ -152,7 +164,6 @@ if menu_selection == "🔬 Phân tích dữ liệu":
         
         with tab1:
             col1, col2 = st.columns(2)
-            image = Image.open(uploaded_file).convert('RGB')
             
             with col1:
                 st.markdown("##### Ảnh gốc H&E")
@@ -168,8 +179,8 @@ if menu_selection == "🔬 Phân tích dữ liệu":
                 st.image(overlay, use_container_width=True)
 
             st.markdown("---")
-            
             st.markdown("##### 📊 Định lượng biểu hiện Top 5 Metagene cốt lõi")
+            
             mean_vals = st.session_state.output.mean(dim=0)[:5].numpy()
             labels = ['PC0 (Core)', 'MG 1', 'MG 2', 'MG 3', 'MG 4']
             
@@ -200,7 +211,7 @@ if menu_selection == "🔬 Phân tích dữ liệu":
                 top_idx = np.argsort(weights)[-10:][::-1]
                 
                 st.markdown(f"##### Danh sách Top 10 Gene chủ đạo của Metagene {target_mg}")
-                st.info("Bảng dưới đây hiển thị các Gene có đóng góp lớn nhất vào cụm sinh học này.")
+                st.info("Bảng dưới đây hiển thị các Gene có đóng góp lớn nhất vào cụm sinh học này (hiển thị trọn vẹn tên gene).")
                 
                 gene_data = []
                 for i, idx in enumerate(top_idx):
@@ -208,13 +219,10 @@ if menu_selection == "🔬 Phân tích dữ liệu":
                     gene_data.append({"Hạng": f"#{i+1}", "Tên Gene": name, "Trọng số": f"{weights[idx]:.4f}"})
                 
                 st.table(gene_data)
-    else:
-        st.info("👈 Vui lòng tải lên ảnh mô bệnh học (H&E) ở thanh bên trái để bắt đầu quá trình phân tích.")
-        st.markdown("💡 *Gợi ý: Nếu bạn chưa quen với hệ thống, hãy chuyển sang tab **Hướng dẫn & Đọc hiểu** trên thanh menu.*")
+            else:
+                st.warning("⚠️ Đang chờ tải file giải mã Gene từ máy chủ...")
 
-# ==========================================
-# TRANG 2: HƯỚNG DẪN & ĐỌC HIỂU
-# ==========================================
+# ----------------- TRANG 2: HƯỚNG DẪN -----------------
 elif menu_selection == "📖 Hướng dẫn & Đọc hiểu":
     st.markdown("## 📖 Hướng dẫn sử dụng & Đọc hiểu Kết quả")
     st.markdown("Hệ thống **ViST-Graph** sử dụng Trí tuệ Nhân tạo (GCN) để giải mã các tín hiệu sinh học ẩn sâu trong hình ảnh mô bệnh học (H&E) thông thường. Dưới đây là cách sử dụng và phiên dịch các thông số:")
