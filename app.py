@@ -160,7 +160,7 @@ if menu_selection == "🔬 Phân tích dữ liệu":
 
         target_mg = st.select_slider("🎯 Kéo để chọn Siêu gene (Metagene) cần xem chi tiết:", options=range(50), value=0)
         
-        tab1, tab2 = st.tabs(["🗺️ BẢN ĐỒ KHÔNG GIAN & ĐỊNH LƯỢNG", "🧬 GIẢI MÃ GENE CHI TIẾT"])
+        tab1, tab2, tab3 = st.tabs(["🗺️ BẢN ĐỒ KHÔNG GIAN & ĐỊNH LƯỢNG", "🧬 GIẢI MÃ GENE CHI TIẾT", "📝 BỆNH ÁN TỰ ĐỘNG"])
         
         with tab1:
             col1, col2 = st.columns(2)
@@ -221,6 +221,54 @@ if menu_selection == "🔬 Phân tích dữ liệu":
                 st.table(gene_data)
             else:
                 st.warning("⚠️ Đang chờ tải file giải mã Gene từ máy chủ...")
+
+        with tab3:
+            st.markdown("##### 🤖 Trợ lý Y khoa Google Gemini & Local Heuristic Engine")
+            st.info("Hệ thống tự động sinh bệnh án dựa trên danh sách các gen sinh học chủ đạo. API đã được tích hợp sẵn. Nếu mất kết nối, hệ thống sẽ tự động chuyển sang chế độ Ngoại tuyến (Local Heuristic Engine).")
+            
+            # Gắn cứng API Key theo yêu cầu
+            api_key = "AQ.Ab8RN6KHAjHCX6qhmv2Ho-9uA2bktmQVavdMlYFHKey3WFRNhw"
+            
+            if st.button("Tạo Bệnh Án", type="primary"):
+                if pca_model:
+                    weights = pca_model.components_[target_mg]
+                    top_idx = np.argsort(weights)[-10:][::-1]
+                    gene_list = [gene_mapping[idx] if gene_mapping else f"ID: {idx}" for idx in top_idx]
+                    
+                    if api_key:
+                        try:
+                            import google.generativeai as genai
+                            genai.configure(api_key=api_key)
+                            model = genai.GenerativeModel('gemini-2.5-flash')
+                            prompt = f"Đóng vai một bác sĩ giải phẫu bệnh chuyên nghiệp. Hãy viết một báo cáo bệnh án ngắn gọn (khoảng 150-200 chữ) dựa trên sự xuất hiện của các dấu ấn gen sinh học chủ đạo sau đây tại vùng mô ung thư vú: {', '.join(gene_list)}. Trình bày thành các gạch đầu dòng rõ ràng về ý nghĩa lâm sàng của chúng."
+                            
+                            with st.spinner("🤖 Gemini đang phân tích và viết bệnh án..."):
+                                response = model.generate_content(prompt)
+                                st.success("✅ Đã kết nối Internet & API thành công. Bệnh án được sinh bởi Google Gemini:")
+                                st.write(response.text)
+                        except Exception as e:
+                            st.warning("⚠️ Lỗi kết nối hoặc API Key không hợp lệ. Đang kích hoạt **Local Heuristic Engine**...")
+                            fallback_mode = True
+                    else:
+                        st.warning("⚠️ Bạn chưa nhập API Key. Đang kích hoạt chế độ ngoại tuyến **Local Heuristic Engine**...")
+                        fallback_mode = True
+                        
+                    if 'fallback_mode' in locals() and fallback_mode:
+                        st.markdown("### 📝 Báo cáo Chẩn đoán (Local Heuristic Engine)")
+                        report_md = "Dựa trên phân tích từ khóa gen mục tiêu bằng cơ chế Offline, hệ thống nhận diện các dấu ấn sinh học sau tại vi môi trường khối u:\n\n"
+                        for g in gene_list:
+                            if "TP53" in g: report_md += f"- **{g}**: Phát hiện gen ức chế khối u (Tumor suppressor). Nguy cơ cao xuất hiện đột biến phổ biến trong ung thư vú.\n"
+                            elif "BRCA" in g: report_md += f"- **{g}**: Dấu ấn liên quan mật thiết đến ung thư vú di truyền và sửa chữa DNA.\n"
+                            elif "ERBB2" in g: report_md += f"- **{g} (HER2)**: Phát hiện dấu ấn tăng sinh tế bào ung thư. Đề xuất xem xét phác đồ điều trị đích kháng HER2.\n"
+                            elif "KRT" in g: report_md += f"- **{g}**: Keratin marker, đặc trưng cho tế bào biểu mô khối u tại vùng này.\n"
+                            elif "MKI67" in g: report_md += f"- **{g}**: Chỉ số ki-67 liên quan đến sự tăng sinh tế bào mạnh mẽ.\n"
+                            elif "ESR1" in g: report_md += f"- **{g}**: Dấu ấn thụ thể Estrogen (ER+). Đề xuất xem xét liệu pháp nội tiết.\n"
+                            else: report_md += f"- **{g}**: Gen có mức độ biểu hiện cao bất thường, đóng vai trò trong cấu trúc vi môi trường khối u.\n"
+                        
+                        report_md += "\n*Lưu ý: Báo cáo trên được tự động sinh bằng thuật toán nội bộ dựa trên cơ sở dữ liệu marker sinh học ung thư vú.*"
+                        st.info(report_md)
+                else:
+                    st.error("Chưa tải xong dữ liệu gen, vui lòng thử lại sau.")
 
 # ----------------- TRANG 2: HƯỚNG DẪN -----------------
 elif menu_selection == "📖 Hướng dẫn & Đọc hiểu":
