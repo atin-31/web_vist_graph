@@ -247,6 +247,9 @@ if menu_selection == "🔬 Phân tích dữ liệu":
                                 st.success("✅ Đã kết nối Internet & API thành công. Bệnh án được sinh bởi Google Gemini:")
                                 st.write(response.text)
                         except Exception as e:
+                            # DÒNG NÀY SẼ HIỆN THẲNG NGUYÊN NHÂN LỖI RA MÀN HÌNH WEB:
+                            st.error(f"❌ NGUYÊN NHÂN LỖI TỪ GOOGLE: {str(e)}")
+                            
                             st.warning("⚠️ Lỗi kết nối hoặc API Key không hợp lệ. Đang kích hoạt **Local Heuristic Engine**...")
                             fallback_mode = True
                     else:
