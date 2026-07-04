@@ -227,7 +227,7 @@ if menu_selection == "🔬 Phân tích dữ liệu":
             st.info("Hệ thống tự động sinh bệnh án dựa trên danh sách các gen sinh học chủ đạo. API đã được tích hợp sẵn. Nếu mất kết nối, hệ thống sẽ tự động chuyển sang chế độ Ngoại tuyến (Local Heuristic Engine).")
             
             # Gắn cứng API Key theo yêu cầu
-            api_key = "AQ.Ab8RN6KHAjHCX6qhmv2Ho-9uA2bktmQVavdMlYFHKey3WFRNhw"
+            api_key = "AQ.Ab8RN6JECIJi7sBVQTr_7oDmkuLhoiFfr1I63l7fq6mAd2hUgg"
             
             if st.button("Tạo Bệnh Án", type="primary"):
                 if pca_model:
