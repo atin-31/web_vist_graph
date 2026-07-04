@@ -239,7 +239,7 @@ if menu_selection == "🔬 Phân tích dữ liệu":
                         try:
                             import google.generativeai as genai
                             genai.configure(api_key=api_key)
-                            model = genai.GenerativeModel('gemini-2.5-flash')
+                            model = genai.GenerativeModel('gemini-1.5-flash')
                             prompt = f"Đóng vai một bác sĩ giải phẫu bệnh chuyên nghiệp. Hãy viết một báo cáo bệnh án ngắn gọn (khoảng 150-200 chữ) dựa trên sự xuất hiện của các dấu ấn gen sinh học chủ đạo sau đây tại vùng mô ung thư vú: {', '.join(gene_list)}. Trình bày thành các gạch đầu dòng rõ ràng về ý nghĩa lâm sàng của chúng."
                             
                             with st.spinner("🤖 Gemini đang phân tích và viết bệnh án..."):
