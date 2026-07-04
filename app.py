@@ -226,8 +226,8 @@ if menu_selection == "🔬 Phân tích dữ liệu":
             st.markdown("##### 🤖 Trợ lý Y khoa Google Gemini & Local Heuristic Engine")
             st.info("Hệ thống tự động sinh bệnh án dựa trên danh sách các gen sinh học chủ đạo. API đã được tích hợp sẵn. Nếu mất kết nối, hệ thống sẽ tự động chuyển sang chế độ Ngoại tuyến (Local Heuristic Engine).")
             
-            # Gắn cứng API Key theo yêu cầu
-            api_key = "AQ.Ab8RN6JECIJi7sBVQTr_7oDmkuLhoiFfr1I63l7fq6mAd2hUgg"
+            # Gắn sẵn API Key mới nhất của bạn
+            api_key = "AQ.Ab8RN6I4l8kG1Fa0OVCrAvQmE3uK5EWm_TFZFH36cjLCOMqaGA"
             
             if st.button("Tạo Bệnh Án", type="primary"):
                 if pca_model:
@@ -239,7 +239,7 @@ if menu_selection == "🔬 Phân tích dữ liệu":
                         try:
                             import google.generativeai as genai
                             genai.configure(api_key=api_key)
-                            model = genai.GenerativeModel('gemini-1.5-flash')
+                            model = genai.GenerativeModel('gemini-2.5-flash')
                             prompt = f"Đóng vai một bác sĩ giải phẫu bệnh chuyên nghiệp. Hãy viết một báo cáo bệnh án ngắn gọn (khoảng 150-200 chữ) dựa trên sự xuất hiện của các dấu ấn gen sinh học chủ đạo sau đây tại vùng mô ung thư vú: {', '.join(gene_list)}. Trình bày thành các gạch đầu dòng rõ ràng về ý nghĩa lâm sàng của chúng."
                             
                             with st.spinner("🤖 Gemini đang phân tích và viết bệnh án..."):
@@ -247,10 +247,9 @@ if menu_selection == "🔬 Phân tích dữ liệu":
                                 st.success("✅ Đã kết nối Internet & API thành công. Bệnh án được sinh bởi Google Gemini:")
                                 st.write(response.text)
                         except Exception as e:
-                            # DÒNG NÀY SẼ HIỆN THẲNG NGUYÊN NHÂN LỖI RA MÀN HÌNH WEB:
-                            st.error(f"❌ NGUYÊN NHÂN LỖI TỪ GOOGLE: {str(e)}")
-                            
-                            st.warning("⚠️ Lỗi kết nối hoặc API Key không hợp lệ. Đang kích hoạt **Local Heuristic Engine**...")
+                            # HIỆN THẲNG LỖI RA MÀN HÌNH WEB NẾU CÓ SỰ CỐ
+                            st.error(f"❌ LỖI KẾT NỐI GOOGLE GEMINI: {str(e)}")
+                            st.warning("⚠️ Đang kích hoạt chế độ dự phòng **Local Heuristic Engine**...")
                             fallback_mode = True
                     else:
                         st.warning("⚠️ Bạn chưa nhập API Key. Đang kích hoạt chế độ ngoại tuyến **Local Heuristic Engine**...")
